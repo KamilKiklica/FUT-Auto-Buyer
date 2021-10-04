@@ -10,6 +10,7 @@ import {
   idAbAvailableItems,
   idAbActiveTransfers,
   idAbProfit,
+  idAbSearchedItems
 } from "../../elementIds.constants";
 
 export const BuyerStatus = () => {
@@ -48,6 +49,11 @@ export const HeaderView = () => {
     <div class="view-navbar-clubinfo-data">
        <span class="view-navbar-clubinfo-name">Available Items: <span id=${idAbAvailableItems}></span></span>
        <span class="view-navbar-clubinfo-name">Active transfers: <span id=${idAbActiveTransfers}></span></span>
+    </div>
+  </div>
+  <div class="view-navbar-clubinfo">
+    <div class="view-navbar-clubinfo-data">
+       <span class="view-navbar-clubinfo-name">Searched Items: <span id=${idAbSearchedItems}></span></span>
     </div>
   </div>`;
 };

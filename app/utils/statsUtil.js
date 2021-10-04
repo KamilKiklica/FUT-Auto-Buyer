@@ -11,3 +11,10 @@ export const updateProfit = (val) => {
   currentStats["profit"] += val;
   setValue("sessionStats", currentStats);
 };
+
+export const updateSearchedItems = (val) => {
+  const currentStats = getValue("sessionStats");
+  currentStats["searchedItems"] = val;
+  setValue("sessionStats", currentStats);
+};
+

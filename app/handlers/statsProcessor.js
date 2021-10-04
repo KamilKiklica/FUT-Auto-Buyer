@@ -8,6 +8,7 @@ import {
   idAbSoldItems,
   idAbStatisticsProgress,
   idAbUnsoldItems,
+  idAbSearchedItems
 } from "../elementIds.constants";
 import { getValue, setValue } from "../services/repository";
 import { getTimerProgress } from "../utils/commonUtil";
@@ -21,6 +22,7 @@ setValue("sessionStats", {
   coinsNumber: 0,
   searchCount: 0,
   profit: 0,
+  searchedItems:"-"
 });
 
 export const statsProcessor = () => {
@@ -37,6 +39,7 @@ export const statsProcessor = () => {
     $("#" + idAbAvailableItems).html(currentStats.availableItems);
     $("#" + idAbActiveTransfers).html(currentStats.activeTransfers);
     $("#" + idAbProfit).html(currentStats.profit);
+    $("#" + idAbSearchedItems).html(currentStats.searchedItems);
 
     if (currentStats.unsoldItems) {
       $("#" + idAbUnsoldItems).css("color", "red");
@@ -48,6 +51,12 @@ export const statsProcessor = () => {
       $("#" + idAbAvailableItems).css("color", "orange");
     } else {
       $("#" + idAbAvailableItems).css("color", "");
+    }
+
+    if (currentStats.searchedItems) {
+      $("#" + idAbSearchedItems).css("color", "green");
+    } else {
+      $("#" + idAbSearchedItems).css("color", "");
     }
   }, 1000);
 };

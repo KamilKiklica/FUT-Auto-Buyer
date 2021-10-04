@@ -21,12 +21,13 @@ import {
   roundOffPrice,
 } from "../utils/priceUtils";
 import { buyPlayer, checkRating } from "../utils/purchaseUtil";
-import { updateRequestCount } from "../utils/statsUtil";
+import { updateRequestCount, updateSearchedItems } from "../utils/statsUtil";
 import { setRandomInterval } from "../utils/timeOutUtil";
 import { transferListUtil } from "../utils/transferlistUtil";
 import { getUserPlatform } from "../utils/userUtil";
 import { addUserWatchItems, watchListUtil } from "../utils/watchlistUtil";
 import { searchErrorHandler } from "./errorHandler";
+
 
 let interval = null;
 let passInterval = null;
@@ -127,6 +128,11 @@ const searchTransferMarket = function (buyerSetting) {
       this,
       async function (sender, response) {
         if (response.success) {
+          updateSearchedItems(response.data.items.length);
+          const currentStats = getValue("sessionStats");
+          $("#" + idAbProfit).html(currentStats.profit);
+          document.title = "PROFIT: " + currentStats.profit + " | REQ: " + currentStats.searchCount + " | " + window.machine + " | " + window.email;
+
           writeToLog(
             `= Received ${response.data.items.length} items - from page (${currentPage}) => config: (minbid: ${searchCriteria.minBid}-minbuy:${searchCriteria.minBuy})`,
             idAutoBuyerFoundLog

@@ -71,3 +71,4 @@ export const idSellRatingThreshold = "elem_" + generateId(15);
 export const idSellFutBinPrice = "elem_" + generateId(15);
 export const idSellFutBinPercent = "elem_" + generateId(15);
 export const idAbCompactView = "elem_" + generateId(15);
+export const idAbSearchedItems = "elem_" + generateId(15);
