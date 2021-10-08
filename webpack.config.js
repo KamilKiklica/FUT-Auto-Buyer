@@ -3,6 +3,7 @@ const WebpackUserscript = require("webpack-userscript");
 const TerserPlugin = require("terser-webpack-plugin");
 
 module.exports = {
+  devtool:"inline-source-map",
   entry: "./app/index.js",
   output: {
     filename: "./fut-auto-buyer.user.js",

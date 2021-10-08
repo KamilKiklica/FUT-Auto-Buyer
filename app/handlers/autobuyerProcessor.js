@@ -1,4 +1,4 @@
-import { idAbStatus, idAutoBuyerFoundLog } from "../elementIds.constants";
+import { idAbStatus, idAutoBuyerFoundLog, idAbProfit } from "../elementIds.constants";
 import { trackMarketPrices } from "../services/analytics";
 import { getValue, setValue } from "../services/repository";
 import {
@@ -131,7 +131,8 @@ const searchTransferMarket = function (buyerSetting) {
           updateSearchedItems(response.data.items.length);
           const currentStats = getValue("sessionStats");
           $("#" + idAbProfit).html(currentStats.profit);
-          document.title = "PROFIT: " + currentStats.profit + " | REQ: " + currentStats.searchCount + " | " + window.machine + " | " + window.email;
+          document.title = "PROFIT: " + currentStats.profit + " | REQ: " + currentStats.searchCount ;
+          //+ " | " + window.machine + " | " + window.email;
 
           writeToLog(
             `= Received ${response.data.items.length} items - from page (${currentPage}) => config: (minbid: ${searchCriteria.minBid}-minbuy:${searchCriteria.minBuy})`,
