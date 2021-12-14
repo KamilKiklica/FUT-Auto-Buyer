@@ -1,30 +1,60 @@
-import { idAutoBuyerFoundLog } from "../elementIds.constants";
+import {
+  idAutoBuyerFoundLog,
+  idProgressAutobuyer,
+} from "../elementIds.constants";
 import { startAutoBuyer, stopAutoBuyer } from "../handlers/autobuyerProcessor";
+import { updateStats } from "../handlers/statsProcessor";
 import {
   getValue,
   increAndGetStoreValue,
   setValue,
 } from "../services/repository";
-import { convertToSeconds, getRandNum } from "./commonUtil";
+import {
+  convertRangeToSeconds,
+  getRandNum,
+  getRandNumberInRange,
+} from "./commonUtil";
 import { writeToLog } from "./logUtil";
 import { sendNotificationToUser } from "./notificationUtil";
 import { loadFilter } from "./userExternalUtil";
+
+let stopAfter, pauseCycle;
 
 export const stopBotIfRequired = (buyerSetting) => {
   const purchasedCardCount = getValue("purchasedCardCount");
   const cardsToBuy = buyerSetting["idAbCardCount"];
 
   const botStartTime = getValue("botStartTime").getTime();
-  let time = convertToSeconds(buyerSetting["idAbStopAfter"]);
+  let time = stopAfter || convertRangeToSeconds(buyerSetting["idAbStopAfter"]);
+  if (!stopAfter) {
+    stopAfter = time;
+  }
   let sendDetailedNotification = buyerSetting["idDetailedNotification"];
   let currentTime = new Date().getTime();
-  let timeElapsed = (currentTime - botStartTime) / 1000;
+  let timeElapsed = (currentTime - botStartTime) / 1000 >= time;
+  const isSelling = false;
+  // buyerSetting["idSellCheckBuyPrice"] || buyerSetting["idSellFutBinPrice"];
+  const isTransferListFull =
+    isSelling &&
+    repositories.Item &&
+    repositories.Item.transfer.length >=
+      repositories.Item.pileSizes._collection[5];
 
-  if (timeElapsed >= time || (cardsToBuy && purchasedCardCount >= cardsToBuy)) {
-    if(sendDetailedNotification)
-      sendNotificationToUser(`Autbuyer stopped | ${
-        timeElapsed ? "Time elapsed" : "Max pruchases count reached"
-      }`);
+  if (
+    isTransferListFull ||
+    timeElapsed ||
+    (cardsToBuy && purchasedCardCount >= cardsToBuy)
+  ) {
+    const message = timeElapsed
+      ? "Time elapsed"
+      : isTransferListFull
+      ? "Transfer list is full"
+      : "Max purchases count reached";
+
+    if (sendDetailedNotification)
+      sendNotificationToUser(`Autobuyer stopped | ${message}`);
+    writeToLog(`Autobuyer stopped | ${message}`, idProgressAutobuyer);
+    stopAfter = null;
     stopAutoBuyer();
   }
 };
@@ -32,12 +62,18 @@ export const stopBotIfRequired = (buyerSetting) => {
 export const pauseBotIfRequired = function (buyerSetting) {
   const isBuyerActive = getValue("autoBuyerActive");
   if (!isBuyerActive) return;
-  const pauseFor = convertToSeconds(buyerSetting["idAbPauseFor"]) * 1000;
-  const cycleAmount = buyerSetting["idAbCycleAmount"];
-  const searchCount = getValue("sessionStats").searchCount;
-  if (searchCount && !(searchCount % cycleAmount)) {
+  const pauseFor = convertRangeToSeconds(buyerSetting["idAbPauseFor"]) * 1000;
+  const cycleAmount =
+    pauseCycle || getRandNumberInRange(buyerSetting["idAbCycleAmount"]);
+  if (!pauseCycle) {
+    pauseCycle = cycleAmount;
+  }
+  const { searchCount, previousPause } = getValue("sessionStats");
+  if (searchCount && !((searchCount - previousPause) % cycleAmount)) {
+    updateStats("previousPause", searchCount);
     stopAutoBuyer(true);
     return setTimeout(() => {
+      pauseCycle = getRandNumberInRange(buyerSetting["idAbCycleAmount"]);
       startAutoBuyer.call(this, true);
     }, pauseFor);
   }
@@ -56,7 +92,14 @@ export const switchFilterIfRequired = async function () {
     return false;
   }
   setValue("currentFilterCount", 1);
-  let filterName = availableFilters[getRandNum(0, availableFilters.length - 1)];
+  setValue("currentPage", 1);
+  const currentFilterIndex = getValue("currentFilterIndex") || 0;
+  let filterIndex = getValue("runSequentially")
+    ? currentFilterIndex % availableFilters.length
+    : getRandNum(0, availableFilters.length - 1);
+
+  setValue("currentFilterIndex", filterIndex + 1);
+  let filterName = availableFilters[filterIndex];
   await loadFilter.call(this, filterName);
   writeToLog(
     `---------------------------  Running for filter ${filterName}  ---------------------------------------------`,

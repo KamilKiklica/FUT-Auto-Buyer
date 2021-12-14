@@ -4,6 +4,7 @@ import {
 } from "../elementIds.constants";
 import { getValue, setValue } from "../services/repository";
 import {
+  convertToSeconds,
   formatString,
   getRandWaitTime,
   promisifyTimeOut,
@@ -31,6 +32,10 @@ export const watchListUtil = function (buyerSetting) {
       let activeItems = response.data.items.filter(function (item) {
         return item._auction && item._auction._tradeState === "active";
       });
+
+      if (!activeItems.length) {
+        return resolve();
+      }
 
       services.Item.refreshAuctions(activeItems).observe(
         this,
@@ -73,6 +78,7 @@ export const watchListUtil = function (buyerSetting) {
 
               if (
                 isAutoBuyerActive &&
+                !buyerSetting["idAbDontMoveWon"] &&
                 ((sellPrice && !isNaN(sellPrice)) || useFutBinPrice)
               ) {
                 let boughtItems = watchResponse.data.items.filter(function (
@@ -89,6 +95,7 @@ export const watchListUtil = function (buyerSetting) {
 
                 for (var i = 0; i < boughtItems.length; i++) {
                   const player = boughtItems[i];
+                  const price = player._auction.currentBid;
                   const ratingThreshold = buyerSetting["idSellRatingThreshold"];
                   let playerRating = parseInt(player.rating);
                   const isValidRating =
@@ -99,8 +106,13 @@ export const watchListUtil = function (buyerSetting) {
                     sellPrice = await getSellPriceFromFutBin(
                       buyerSetting,
                       playerName,
-                      player.definitionId
+                      player
                     );
+                  }
+
+                  const checkBuyPrice = buyerSetting["idSellCheckBuyPrice"];
+                  if (checkBuyPrice && price > (sellPrice * 95) / 100) {
+                    sellPrice = -1;
                   }
 
                   const shouldList =
@@ -113,12 +125,26 @@ export const watchListUtil = function (buyerSetting) {
                     await sellWonItems(
                       player,
                       sellPrice,
-                      buyerSetting["idAbWaitTime"]
+                      buyerSetting["idAbWaitTime"],
+                      buyerSetting["idFutBinDuration"]
                     );
                   } else {
                     services.Item.move(player, ItemPile.CLUB);
                   }
                 }
+              }
+
+              let expiredItems = watchResponse.data.items.filter((item) => {
+                var t = item.getAuctionData();
+                return t.isExpired() || (t.isClosedTrade() && !t.isWon());
+              });
+
+              if (buyerSetting["idAutoClearExpired"] && expiredItems.length) {
+                services.Item.untarget(expiredItems);
+                writeToLog(
+                  `Found ${expiredItems.length} expired items and removed from watchlist`,
+                  idAutoBuyerFoundLog
+                );
               }
 
               services.Item.clearTransferMarketCache();
@@ -187,7 +213,7 @@ const tryBidItems = async (player, bidPrice, sellPrice, buyerSetting) => {
   }
 };
 
-const sellWonItems = async (player, sellPrice, waitRange) => {
+const sellWonItems = async (player, sellPrice, waitRange, sellDuration) => {
   let auction = player._auction;
   let playerName = formatString(player._staticData.name, 15);
   sellBids.add(auction.tradeId);
@@ -203,6 +229,11 @@ const sellWonItems = async (player, sellPrice, waitRange) => {
   player.clearAuction();
 
   await promisifyTimeOut(function () {
-    services.Item.list(player, getSellBidPrice(sellPrice), sellPrice, 3600);
+    services.Item.list(
+      player,
+      getSellBidPrice(sellPrice),
+      sellPrice,
+      convertToSeconds(sellDuration || "1H") || 3600
+    );
   }, getRandWaitTime(waitRange));
 };

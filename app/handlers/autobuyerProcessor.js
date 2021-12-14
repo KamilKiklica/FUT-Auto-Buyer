@@ -1,6 +1,17 @@
-import { idAbStatus, idAutoBuyerFoundLog, idAbProfit } from "../elementIds.constants";
+import {
+  idAbStatus,
+  idAutoBuyerFoundLog,
+  idProgressAutobuyer,
+  idAbProfit
+} from "../elementIds.constants";
+import {
+  getBuyerSettings,
+  getValue,
+  increAndGetStoreValue,
+  setValue,
+} from "../services/repository";
+=======
 import { trackMarketPrices } from "../services/analytics";
-import { getValue, setValue } from "../services/repository";
 import {
   pauseBotIfRequired,
   stopBotIfRequired,
@@ -13,6 +24,7 @@ import {
   getRangeValue,
   playAudio,
 } from "../utils/commonUtil";
+import { addFutbinCachePrice } from "../utils/futbinUtil";
 import { writeToDebugLog, writeToLog } from "../utils/logUtil";
 import { sendPinEvents, sendUINotification } from "../utils/notificationUtil";
 import {
@@ -24,7 +36,6 @@ import { buyPlayer, checkRating } from "../utils/purchaseUtil";
 import { updateRequestCount, updateSearchedItems } from "../utils/statsUtil";
 import { setRandomInterval } from "../utils/timeOutUtil";
 import { transferListUtil } from "../utils/transferlistUtil";
-import { getUserPlatform } from "../utils/userUtil";
 import { addUserWatchItems, watchListUtil } from "../utils/watchlistUtil";
 import { searchErrorHandler } from "./errorHandler";
 
@@ -32,6 +43,21 @@ import { searchErrorHandler } from "./errorHandler";
 let interval = null;
 let passInterval = null;
 const currentBids = new Set();
+
+const sortPlayers = (playerList, sortBy, sortOrder) => {
+  let sortFunc = (a) => a._auction.buyNowPrice;
+  if (sortBy === "bid") {
+    sortFunc = (a) => a._auction.currentBid || a._auction.startingBid;
+  } else if (sortBy === "rating") {
+    sortFunc = (a) => parseInt(a.rating);
+  }
+  playerList.sort((a, b) => {
+    const sortAValue = sortFunc(a);
+    const sortBValue = sortFunc(b);
+    return !sortOrder ? sortBValue - sortAValue : sortAValue - sortBValue;
+  });
+  return playerList;
+};
 
 export const startAutoBuyer = async function (isResume) {
   $("#" + idAbStatus)
@@ -42,9 +68,12 @@ export const startAutoBuyer = async function (isResume) {
   if (isActive) return;
   sendUINotification(isResume ? "Autobuyer Resumed" : "Autobuyer Started");
   setValue("autoBuyerActive", true);
+  setValue("autoBuyerState", "Active");
   if (!isResume) {
     setValue("botStartTime", new Date());
     setValue("purchasedCardCount", 0);
+    setValue("searchFailedCount", 0);
+    setValue("currentPage", 1);
   }
   let switchFilterWithContext = switchFilterIfRequired.bind(this);
   let srchTmWithContext = searchTransferMarket.bind(this);
@@ -52,7 +81,7 @@ export const startAutoBuyer = async function (isResume) {
   let transferListWithContext = transferListUtil.bind(this);
   let pauseBotWithContext = pauseBotIfRequired.bind(this);
   await switchFilterWithContext();
-  let buyerSetting = getValue("BuyerSettings");
+  let buyerSetting = getBuyerSettings();
   !isResume && (await addUserWatchItems());
   sendPinEvents("Hub - Transfers");
   await srchTmWithContext(buyerSetting);
@@ -62,24 +91,29 @@ export const startAutoBuyer = async function (isResume) {
     buyerSetting["idAbMinDeleteCount"],
     true
   );
-  interval = setRandomInterval(async () => {
-    passInterval = pauseBotWithContext(buyerSetting);
-    stopBotIfRequired(buyerSetting);
-    const isBuyerActive = getValue("autoBuyerActive");
-    if (isBuyerActive) {
-      await switchFilterWithContext();
-      buyerSetting = getValue("BuyerSettings");
-      sendPinEvents("Hub - Transfers");
-      await srchTmWithContext(buyerSetting);
-      sendPinEvents("Hub - Transfers");
-      await watchListWithContext(buyerSetting);
-      sendPinEvents("Hub - Transfers");
-      await transferListWithContext(
-        buyerSetting["idAbSellToggle"],
-        buyerSetting["idAbMinDeleteCount"]
-      );
-    }
-  }, ...getRangeValue(buyerSetting["idAbWaitTime"]));
+  let operationInProgress = false;
+  if (getValue("autoBuyerActive")) {
+    interval = setRandomInterval(async () => {
+      passInterval = pauseBotWithContext(buyerSetting);
+      stopBotIfRequired(buyerSetting);
+      const isBuyerActive = getValue("autoBuyerActive");
+      if (isBuyerActive && !operationInProgress) {
+        operationInProgress = true;
+        await switchFilterWithContext();
+        buyerSetting = getBuyerSettings();
+        sendPinEvents("Hub - Transfers");
+        await srchTmWithContext(buyerSetting);
+        sendPinEvents("Hub - Transfers");
+        await watchListWithContext(buyerSetting);
+        sendPinEvents("Hub - Transfers");
+        await transferListWithContext(
+          buyerSetting["idAbSellToggle"],
+          buyerSetting["idAbMinDeleteCount"]
+        );
+        operationInProgress = false;
+      }
+    }, ...getRangeValue(buyerSetting["idAbWaitTime"]));
+  }
 };
 
 export const stopAutoBuyer = (isPaused) => {
@@ -97,6 +131,7 @@ export const stopAutoBuyer = (isPaused) => {
   if (!isPaused) {
     playAudio("finish");
   }
+  setValue("autoBuyerState", isPaused ? "Paused" : "Stopped");
   sendUINotification(isPaused ? "Autobuyer Paused" : "Autobuyer Stopped");
   $("#" + idAbStatus)
     .css("color", "red")
@@ -104,18 +139,31 @@ export const stopAutoBuyer = (isPaused) => {
 };
 
 const searchTransferMarket = function (buyerSetting) {
-  const platform = getUserPlatform();
   return new Promise((resolve) => {
-    sendPinEvents("Transfer Market Search");
-    updateRequestCount();
-    let searchCriteria = this._viewmodel.searchCriteria;
-
-    services.Item.clearTransferMarketCache();
-
     const expiresIn = convertToSeconds(buyerSetting["idAbItemExpiring"]);
     const useRandMinBid = buyerSetting["idAbRandMinBidToggle"];
     const useRandMinBuy = buyerSetting["idAbRandMinBuyToggle"];
-    let currentPage = 1;
+    const futBinBuyPercent = buyerSetting["idBuyFutBinPercent"] || 100;
+    let currentPage = getValue("currentPage") || 1;
+    const playersList = new Set(
+      (buyerSetting["idAddIgnorePlayersList"] || []).map(({ id }) => id)
+    );
+
+    let bidPrice = buyerSetting["idAbMaxBid"];
+    let userBuyNowPrice = buyerSetting["idAbBuyPrice"];
+    let useFutBinPrice = buyerSetting["idBuyFutBinPrice"];
+
+    if (!userBuyNowPrice && !bidPrice && !useFutBinPrice) {
+      writeToLog(
+        "skip search >>> (No Buy or Bid Price given)",
+        idAutoBuyerFoundLog
+      );
+      return resolve();
+    }
+
+    sendPinEvents("Transfer Market Search");
+    updateRequestCount();
+    let searchCriteria = this._viewmodel.searchCriteria;
     if (useRandMinBid)
       searchCriteria.minBid = roundOffPrice(
         getRandNum(0, buyerSetting["idAbRandMinBidInput"])
@@ -124,15 +172,19 @@ const searchTransferMarket = function (buyerSetting) {
       searchCriteria.minBuy = roundOffPrice(
         getRandNum(0, buyerSetting["idAbRandMinBuyInput"])
       );
+    services.Item.clearTransferMarketCache();
+
     services.Item.searchTransferMarket(searchCriteria, currentPage).observe(
       this,
       async function (sender, response) {
         if (response.success) {
+
+          setValue("searchFailedCount", 0);
+          let validSearchCount = true;
+
           updateSearchedItems(response.data.items.length);
           const currentStats = getValue("sessionStats");
           $("#" + idAbProfit).html(currentStats.profit);
-          document.title = "PROFIT: " + currentStats.profit + " | REQ: " + currentStats.searchCount ;
-          //+ " | " + window.machine + " | " + window.email;
 
           writeToLog(
             `= Received ${response.data.items.length} items - from page (${currentPage}) => config: (minbid: ${searchCriteria.minBid}-minbuy:${searchCriteria.minBuy})`,
@@ -146,30 +198,65 @@ const searchTransferMarket = function (buyerSetting) {
             );
             currentPage === 1 &&
               sendPinEvents("Transfer Market Results - List View");
+            if (useFutBinPrice && response.data.items[0].type === "player") {
+              await addFutbinCachePrice(response.data.items);
+            }
+          }
+
+          if (response.data.items.length > buyerSetting["idAbSearchResult"]) {
+            validSearchCount = false;
           }
 
           let maxPurchases = buyerSetting["idAbMaxPurchases"];
-          const auctionPrices = [];
-
-          for (let i = response.data.items.length - 1; i >= 0; i--) {
+          if (
+            currentPage < buyerSetting["idAbMaxSearchPage"] &&
+            response.data.items.length === 21
+          ) {
+            increAndGetStoreValue("currentPage");
+          } else {
+            setValue("currentPage", 1);
+          }
+          if (buyerSetting["idAbShouldSort"])
+            response.data.items = sortPlayers(
+              response.data.items,
+              buyerSetting["idAbSortBy"] || "buy",
+              buyerSetting["idAbSortOrder"]
+            );
+          for (
+            let i = response.data.items.length - 1;
+            i >= 0 && getValue("autoBuyerActive");
+            i--
+          ) {
             let player = response.data.items[i];
             let auction = player._auction;
             let type = player.type;
+            let { id } = player._metaData || {};
             let playerRating = parseInt(player.rating);
             let expires = services.Localization.localizeAuctionTimeRemaining(
               auction.expires
             );
 
-            if (type === "player") {
-              const { trackPayLoad } = formRequestPayLoad(player, platform);
-
-              auctionPrices.push(trackPayLoad);
+            if (useFutBinPrice && type === "player") {
+              const existingValue = getValue(player.definitionId);
+              if (existingValue && existingValue.price) {
+                const futBinBuyPrice = roundOffPrice(
+                  (existingValue.price * futBinBuyPercent) / 100
+                );
+                userBuyNowPrice = futBinBuyPrice;
+                if (buyerSetting["idAbBidFutBin"]) {
+                  bidPrice = futBinBuyPrice;
+                }
+              } else {
+                writeToLog(
+                  `Error fetch fetching Price for ${player._staticData.name}`,
+                  idProgressAutobuyer
+                );
+                continue;
+              }
             }
-
             let buyNowPrice = auction.buyNowPrice;
             let currentBid = auction.currentBid || auction.startingBid;
             let isBid = auction.currentBid;
-            let bidPrice = buyerSetting["idAbMaxBid"];
 
             let priceToBid = buyerSetting["idAbBidExact"]
               ? bidPrice
@@ -183,7 +270,6 @@ const searchTransferMarket = function (buyerSetting) {
               ? getBuyBidPrice(currentBid)
               : currentBid;
 
-            let userBuyNowPrice = buyerSetting["idAbBuyPrice"];
             let usersellPrice = buyerSetting["idAbSellPrice"];
             let minRating = buyerSetting["idAbMinRating"];
             let maxRating = buyerSetting["idAbMaxRating"];
@@ -208,19 +294,21 @@ const searchTransferMarket = function (buyerSetting) {
               expireTime
             );
 
-            if (currentPage <= 20 && response.data.items.length === 21) {
-              currentPage++;
-            } else {
-              currentPage = 1;
+            if (
+              (!buyerSetting["idAbIgnoreAllowToggle"] && playersList.has(id)) ||
+              (buyerSetting["idAbIgnoreAllowToggle"] && !playersList.has(id))
+            ) {
+              logWrite("skip >>> (Ignored player)");
+              continue;
+            }
+
+            if (!validSearchCount) {
+              logWrite("skip >>> (Exceeded search result threshold)");
+              continue;
             }
 
             if (maxPurchases < 1) {
               logWrite("skip >>> (Exceeded num of buys/bids per search)");
-              continue;
-            }
-
-            if (!userBuyNowPrice && !bidPrice) {
-              logWrite("skip >>> (No Buy or Bid Price given)");
               continue;
             }
 
@@ -249,8 +337,8 @@ const searchTransferMarket = function (buyerSetting) {
             }
 
             if (buyNowPrice <= userBuyNowPrice) {
-              logWrite("attempt buy: " + buyNowPrice);
               maxPurchases--;
+              logWrite("attempt buy: " + buyNowPrice);
               currentBids.add(auction.tradeId);
               await buyPlayer(
                 player,
@@ -292,9 +380,6 @@ const searchTransferMarket = function (buyerSetting) {
 
             logWrite("skip >>> (No Actions Required)");
           }
-          if (auctionPrices.length && auctionPrices.length < 12) {
-            trackMarketPrices(auctionPrices);
-          }
         } else {
           searchErrorHandler(
             response,
@@ -307,33 +392,6 @@ const searchTransferMarket = function (buyerSetting) {
       }
     );
   });
-};
-
-const formRequestPayLoad = (player, platform) => {
-  const {
-    id,
-    definitionId,
-    _auction: { buyNowPrice, tradeId: auctionId, expires: expiresOn },
-    _metaData: { id: assetId } = {},
-    rareflag,
-    playStyle,
-  } = player;
-
-  const expireDate = new Date();
-  expireDate.setSeconds(expireDate.getSeconds() + expiresOn);
-  const trackPayLoad = {
-    definitionId,
-    price: buyNowPrice,
-    expiresOn: expireDate,
-    id: id + "",
-    assetId: assetId + "_" + platform + "_" + rareflag,
-    auctionId,
-    year: 22,
-    updatedOn: new Date(),
-    playStyle,
-  };
-
-  return { trackPayLoad };
 };
 
 const writeToLogClosure = (

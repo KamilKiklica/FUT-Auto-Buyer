@@ -1,12 +1,14 @@
 import { errorCodeLookUp } from "../app.constants";
 import { idProgressAutobuyer } from "../elementIds.constants";
-import { stopAutoBuyer } from "../handlers/autobuyerProcessor";
+import { startAutoBuyer, stopAutoBuyer } from "../handlers/autobuyerProcessor";
 import {
+  getBuyerSettings,
   getValue,
   increAndGetStoreValue,
   setValue,
 } from "../services/repository";
 import {
+  convertRangeToSeconds,
   convertToSeconds,
   formatString,
   getRandWaitTime,
@@ -17,7 +19,7 @@ import { getSellPriceFromFutBin } from "./futbinUtil";
 import { writeToAbLog, writeToLog } from "./logUtil";
 import { sendNotificationToUser } from "./notificationUtil";
 import { getSellBidPrice } from "./priceUtils";
-import { updateProfit } from "./statsUtil";
+import { appendTransactions, updateProfit } from "./statsUtil";
 
 export const checkRating = (
   cardRating,
@@ -35,7 +37,7 @@ export const buyPlayer = (
   isBin,
   tradeId
 ) => {
-  const buyerSetting = getValue("BuyerSettings");
+  const buyerSetting = getBuyerSettings();
   return new Promise((resolve) => {
     services.Item.bid(player, price).observe(
       this,
@@ -56,12 +58,17 @@ export const buyPlayer = (
             !ratingThreshold || playerRating <= ratingThreshold;
 
           const useFutBinPrice = buyerSetting["idSellFutBinPrice"];
-          if (isValidRating && useFutBinPrice) {
+          if (isValidRating && useFutBinPrice && isBin) {
             sellPrice = await getSellPriceFromFutBin(
               buyerSetting,
               playerName,
-              player.definitionId
+              player
             );
+          }
+
+          const checkBuyPrice = buyerSetting["idSellCheckBuyPrice"];
+          if (checkBuyPrice && price > (sellPrice * 95) / 100) {
+            sellPrice = -1;
           }
 
           const shouldList = sellPrice && !isNaN(sellPrice) && isValidRating;
@@ -69,6 +76,9 @@ export const buyPlayer = (
           if (isBin) {
             let winCount = increAndGetStoreValue("winCount");
             let sym = " W:" + formatString(winCount.toString(), 4);
+            appendTransactions(
+              `[${new Date().toLocaleTimeString()}] ${playerName.trim()} buy success - Price : ${price}`
+            );
             logMessage = writeToAbLog(
               sym,
               playerName,
@@ -79,27 +89,36 @@ export const buyPlayer = (
                 ? "move to transferlist"
                 : shouldList
                 ? "selling for: " + sellPrice
+                : buyerSetting["idAbDontMoveWon"]
+                ? ""
                 : "move to club"
             );
 
-            setTimeout(function () {
-              if (sellPrice < 0) {
-                services.Item.move(player, ItemPile.TRANSFER);
-              } else if (shouldList) {
-                updateProfit(sellPrice * 0.95 - price);
-                services.Item.list(
-                  player,
-                  getSellBidPrice(sellPrice),
-                  sellPrice,
-                  3600
-                );
-              } else {
-                services.Item.move(player, ItemPile.CLUB);
-              }
-            }, getRandWaitTime(buyerSetting["idAbWaitTime"]));
+            if (!buyerSetting["idAbDontMoveWon"]) {
+              setTimeout(function () {
+                if (sellPrice < 0) {
+                  services.Item.move(player, ItemPile.TRANSFER);
+                } else if (shouldList) {
+                  updateProfit(sellPrice * 0.95 - price);
+                  services.Item.list(
+                    player,
+                    getSellBidPrice(sellPrice),
+                    sellPrice,
+                    convertToSeconds(
+                      buyerSetting["idFutBinDuration"] || "1H"
+                    ) || 3600
+                  );
+                } else {
+                  services.Item.move(player, ItemPile.CLUB);
+                }
+              }, getRandWaitTime(buyerSetting["idAbWaitTime"]));
+            }
           } else {
             let bidCount = increAndGetStoreValue("bidCount");
             let sym = " B:" + formatString(bidCount.toString(), 4);
+            appendTransactions(
+              `[${new Date().toLocaleTimeString()}] ${playerName.trim()} bid success - Price : ${price}`
+            );
             logMessage = writeToAbLog(
               sym,
               playerName,
@@ -121,8 +140,7 @@ export const buyPlayer = (
           }
 
           if (notificationType === "B" || notificationType === "A") {
-            if(sendDetailedNotification)
-              sendNotificationToUser(logMessage);
+            if (sendDetailedNotification) sendNotificationToUser(logMessage);
             else
               sendNotificationToUser(
                 `|  ${playerName.trim()}  | ${priceTxt.trim()} | buy |`
@@ -131,6 +149,9 @@ export const buyPlayer = (
         } else {
           let lossCount = increAndGetStoreValue("lossCount");
           let sym = " L:" + formatString(lossCount.toString(), 4);
+          appendTransactions(
+            `[${new Date().toLocaleTimeString()}] ${playerName.trim()} buy failed - Price : ${price}`
+          );
           let status = (data.error?.code || data.status) + "";
           logMessage = writeToAbLog(
             sym,
@@ -138,15 +159,14 @@ export const buyPlayer = (
             priceTxt,
             isBin ? "buy" : "bid",
             "failure",
-            " ERR: " + (errorCodeLookUp[status] || status)
+            `ERR: (${errorCodeLookUp[status] + "(" + status + ")" || status})`
           );
           if (notificationType === "L" || notificationType === "A") {
-            if(sendDetailedNotification)
-              sendNotificationToUser(logMessage);
+            if (sendDetailedNotification) sendNotificationToUser(logMessage);
             else
               sendNotificationToUser(
                 `| ${playerName.trim()} | ${priceTxt.trim()} | failure |`
-            );
+              );
           }
 
           if (buyerSetting["idAbStopErrorCode"]) {
@@ -172,8 +192,21 @@ export const buyPlayer = (
               );
               errorCodeCountMap.clear();
               stopAutoBuyer();
-              if(sendDetailedNotification)
-                sendNotificationToUser(logMessage);
+              if (sendDetailedNotification) sendNotificationToUser(logMessage);
+
+              if (buyerSetting["idAbResumeAfterErrorOccured"]) {
+                const pauseFor = convertRangeToSeconds(
+                  buyerSetting["idAbResumeAfterErrorOccured"]
+                );
+
+                writeToLog(
+                  `Bot will resume after ${pauseFor}(s)`,
+                  idProgressAutobuyer
+                );
+                setTimeout(() => {
+                  startAutoBuyer.call(getValue("AutoBuyerInstance"));
+                }, pauseFor * 1000);
+              }
             }
           }
         }

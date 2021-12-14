@@ -1,12 +1,12 @@
 import { getValue, setValue } from "../../services/repository";
 let eventMappers = new Set();
 
-const updateCache = (key, value, type, isDefaultValue = false) => {
-  const buyerSetting = getValue("BuyerSettings") || {};
+const updateCache = (key, settingKey, value, type, isDefaultValue = false) => {
+  const buyerSetting = getValue(settingKey) || {};
   if (type === "number") value = parseInt(value);
   buyerSetting[key] = value || null;
   buyerSetting[key + "isDefaultValue"] = isDefaultValue;
-  setValue("BuyerSettings", buyerSetting);
+  setValue(settingKey, buyerSetting);
 };
 
 export const generateTextInput = (
@@ -14,7 +14,9 @@ export const generateTextInput = (
   placeholder,
   id,
   info,
+  settingKey,
   type = "number",
+  pattern = ".*",
   additionalClasses = "buyer-settings-field",
   customCallBack = null
 ) => {
@@ -22,11 +24,11 @@ export const generateTextInput = (
   if (placeholder) {
     customCallBack && customCallBack(placeholder);
   }
-  updateCache(key, placeholder, type, true);
+  updateCache(key, settingKey, placeholder, type, true);
   if (!eventMappers.has(key)) {
     $(document).on("input", `#${id[key]}`, ({ target: { value } }) => {
       customCallBack && customCallBack(value);
-      updateCache(key, value || placeholder, type, !value);
+      updateCache(key, settingKey, value || placeholder, type, !value);
     });
     eventMappers.add(key);
   }
@@ -46,7 +48,7 @@ export const generateTextInput = (
        </div>
        <div class="buttonInfo">
            <div class="inputBox">
-               <input type="${type}" class="numericInput" id='${id[key]}' placeholder=${placeholder}>
+               <input pattern="${pattern}" type="${type}" class="numericInput" id='${id[key]}' placeholder=${placeholder}>
            </div>
        </div>
     </div>`;

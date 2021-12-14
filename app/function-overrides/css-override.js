@@ -108,11 +108,14 @@ export const cssOverride = () => {
   .auto-buyer .enhancer-toggle {
     display: none !important;
   }
-  .search-price-header{
+  .buyer-settings-wrapper .search-price-header{
     display: none !important;
   }
   .mrgTop10 {
     margin-top: 10px;
+  }
+  .mrgRgt10 {
+    margin-right: 10px;
   }
   .header-hr {
     padding: 0px !important;
@@ -132,10 +135,40 @@ export const cssOverride = () => {
   } 
   .filterSync {
     background: transparent;
-    color: #c4f750
+    color: #c4f750;
+    text-overflow: clip;
   }
   .filterSync:hover {
     background: transparent !important;
+  }
+  .numericInput:invalid {
+    color: red;
+    border: 1px solid;
+  }
+  .ignore-players{
+    width: 100%;
+    display: flex;
+    background: transparent;
+  }
+  .ignore-players .ut-player-search-control{
+    width: 90% !important;
+  }
+  .ignore-players filterSync{
+    flex: unset;
+  }
+  .font15 {
+    font-size: 15px;
+  }  
+  .action-icons {
+    width: 10%
+  }
+  .displayCenterFlx {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .ut-toggle-cell-view--label{
+    overflow: unset;
   }
   `;
   if (!isPhone()) {

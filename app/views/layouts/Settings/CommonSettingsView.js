@@ -1,7 +1,9 @@
 import {
   idAbStopErrorCode,
   idAutoClearLog,
+  idAutoClearExpired,
   idAbStopErrorCodeCount,
+  idAbResumeAfterErrorOccured,
 } from "../../../elementIds.constants";
 import { generateTextInput } from "../../../utils/uiUtils/generateTextInput";
 import { generateToggleInput } from "../../../utils/uiUtils/generateToggleInput";
@@ -17,19 +19,37 @@ export const commonSettingsView = function () {
     "",
     { idAbStopErrorCode },
     "(Eg. 412,421,521)",
-    "text"
+    "CommonSettings",
+    "text",
+    "^\\d+(,\\d+)*$"
   )}
   ${generateTextInput(
     "No. of times error code should occur",
     3,
     { idAbStopErrorCodeCount },
     "<br />",
-    "number"
+    "CommonSettings"
+  )}
+  ${generateTextInput(
+    "Resume bot after",
+    "",
+    { idAbResumeAfterErrorOccured },
+    "(S for seconds, M for Minutes, H for hours eg. 0-0S)<br/><br/>",
+    "CommonSettings",
+    "text",
+    "\\d+-\\d+[H|M|S|h|m|s]$"
   )}
   ${generateToggleInput(
     "Auto Clear Log",
     { idAutoClearLog },
-    "(Automatically clear logs <br/> every 2 minutes)"
+    "(Automatically clear logs <br/> every 2 minutes)",
+    "CommonSettings"
+  )} 
+  ${generateToggleInput(
+    "Auto Clear Expired Items",
+    { idAutoClearExpired },
+    "(Automatically clear expired items <br/> from transfer targets)",
+    "CommonSettings"
   )}  
   </div>`;
 };

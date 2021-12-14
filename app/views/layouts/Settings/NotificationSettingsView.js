@@ -28,6 +28,7 @@ export const notificationSettingsView = function () {
     "",
     { idTelegramBotToken },
     "Token of your own bot",
+    "CommonSettings",
     "text"
   )}
   ${generateTextInput(
@@ -35,6 +36,7 @@ export const notificationSettingsView = function () {
     "",
     { idTelegramChatId },
     "Your Telegram ChatID",
+    "CommonSettings",
     "text"
   )}
   ${generateTextInput(
@@ -42,6 +44,7 @@ export const notificationSettingsView = function () {
     "",
     { idDiscordToken },
     "Your Discord Bot Token",
+    "CommonSettings",
     "text"
   )}
   ${generateTextInput(
@@ -49,6 +52,7 @@ export const notificationSettingsView = function () {
     "",
     { idDiscordChannelId },
     "Your Discord Channel ID",
+    "CommonSettings",
     "text"
   )}
   ${generateTextInput(
@@ -56,20 +60,29 @@ export const notificationSettingsView = function () {
     "",
     { idNotificationType },
     "Type A for all notifications, B for buy or L for lost",
-    "text"
+    "CommonSettings",
+    "text",
+    "[A|B|L]$"
   )}
   <div class="price-filter buyer-settings-field">
   </div>
   ${generateToggleInput(
     "Send Notification",
     { idAbMessageNotificationToggle },
-    ""
+    "",
+    "CommonSettings"
   )}
-  ${generateToggleInput("Sound Notification", { idAbSoundToggle }, "")}
+  ${generateToggleInput(
+    "Sound Notification",
+    { idAbSoundToggle },
+    "",
+    "CommonSettings"
+  )}
   ${generateToggleInput(
     "Detailed Notifications",
     { idDetailedNotification },
-    "Log-Messages as notification and Autobuyer Stopped messages with reasons"
+    "Send detailed notification message",
+    "CommonSettings"
   )}
   <div class="btn-test-notification buyer-settings-field">
   ${generateButton(

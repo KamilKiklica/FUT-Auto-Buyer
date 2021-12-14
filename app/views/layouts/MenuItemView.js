@@ -4,10 +4,16 @@ import { safeSettingsView } from "./Settings/SafeSettingsView";
 import { captchaSettingsView } from "./Settings/CaptchaSettingsView";
 import { notificationSettingsView } from "./Settings/NotificationSettingsView";
 import { commonSettingsView } from "./Settings/CommonSettingsView";
-import { searchSettingsView } from "./Settings/SearchSettingsView";
+import {
+  destoryPlayerInput,
+  searchSettingsView,
+} from "./Settings/SearchSettingsView";
 import { filterSettingsView } from "./Settings/FilterSettingsView";
-import { getValue } from "../../services/repository";
+import { getValue, setValue } from "../../services/repository";
 import { updateMultiFilterSettings } from "../../utils/filterUtil";
+import { getUserFilters } from "../../utils/dbUtil";
+import { idAbSortBy } from "../../elementIds.constants";
+import { initializeDiscordClient } from "../../utils/notificationUtil";
 
 const settingsLookup = new Map();
 settingsLookup.set(0, {
@@ -60,13 +66,17 @@ export const generateMenuItems = function () {
   menuRoot = $(menuItems.__root);
   menuRoot.find(".menu-container").css("overflow-x", "auto");
 
-  appendMenuItems();
+  appendMenuItems(true);
   return menuItems;
 };
 
 export const clearSettingMenus = async () => {
   deleteAllMenu();
   await appendMenuItems();
+  const autoBuyerInstance = getValue("AutoBuyerInstance");
+  UTMarketSearchFiltersViewController.prototype._eResetSelected.call(
+    autoBuyerInstance
+  );
 };
 
 export const setDefaultActiveTab = () => {
@@ -76,7 +86,19 @@ export const setDefaultActiveTab = () => {
   });
 };
 
-const appendMenuItems = async () => {
+export const updateCommonSettings = async (isInit) => {
+  let commonSettings = await getUserFilters("CommonSettings");
+  commonSettings = JSON.parse(commonSettings["CommonSettings"] || "{}");
+  if (!$.isEmptyObject(commonSettings)) {
+    const currentValue = isInit ? getValue("CommonSettings") : {};
+    setValue("CommonSettings", { ...(currentValue || {}), ...commonSettings });
+  }
+  if (isInit) {
+    initializeDiscordClient();
+  }
+};
+
+const appendMenuItems = async (isInit) => {
   menuItems.setActiveTab(0);
   menuRoot.append(buySettingsView.call(this));
   menuRoot.append(sellSettingsView.call(this));
@@ -96,17 +118,27 @@ const appendMenuItems = async () => {
   if (legacyView) {
     $(".menu-container").css("display", "none");
     $(".buyer-settings-wrapper").css("display", "");
-    $(".search-price-header").attr("style", "display: flex !important");
+    $(".buyer-settings-wrapper .search-price-header").attr(
+      "style",
+      "display: flex !important"
+    );
   }
 
-  setTimeout(() => {
+  setTimeout(async () => {
     const selectedFilters = getValue("selectedFilters") || [];
+    const { idAbSortBy: sortBy } = getValue("BuyerSettings") || {};
+    if (sortBy) {
+      $(`${idAbSortBy} option[value='${sortBy}']`).prop("selected", "selected");
+    }
     $.each(selectedFilters, function (idx, val) {
       $(".multiselect-filter option[value='" + val + "']").prop(
         "selected",
         "selected"
       );
     });
+    if (isInit) {
+      await updateCommonSettings(isInit);
+    }
     if (selectedFilters.length) {
       updateMultiFilterSettings();
     }
@@ -117,6 +149,7 @@ const deleteAllMenu = () => {
   settingsLookup.forEach((value, key) => {
     $(value.selector).remove();
   });
+  destoryPlayerInput();
 };
 
 const onSettingChange = function (e, t, i) {
