@@ -9,6 +9,7 @@ import {
   idAbSoldItems,
   idAbStatisticsProgress,
   idAbUnsoldItems,
+  idAbSearchedItems
 } from "../elementIds.constants";
 import { sendMessageToDiscord } from "../services/discordService";
 import { getValue, setValue } from "../services/repository";
@@ -26,6 +27,7 @@ setValue("sessionStats", {
   profit: 0,
   sessionId: Date.now().toString(36) + Math.random().toString(36).substr(2),
   transactions: [],
+  searchedItems:"-"
 });
 
 export const statsProcessor = () => {
@@ -43,6 +45,7 @@ export const statsProcessor = () => {
     $("#" + idAbAvailableItems).html(currentStats.availableItems);
     $("#" + idAbActiveTransfers).html(currentStats.activeTransfers);
     $("#" + idAbProfit).html(currentStats.profit);
+    $("#" + idAbSearchedItems).html(currentStats.searchedItems);
 
     updateTimer();
 
@@ -56,6 +59,12 @@ export const statsProcessor = () => {
       $("#" + idAbAvailableItems).css("color", "orange");
     } else {
       $("#" + idAbAvailableItems).css("color", "");
+    }
+
+    if (currentStats.searchedItems) {
+      $("#" + idAbSearchedItems).css("color", "green");
+    } else {
+      $("#" + idAbSearchedItems).css("color", "");
     }
   }, 1000);
 };

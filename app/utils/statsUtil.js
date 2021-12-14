@@ -37,3 +37,9 @@ export const downloadStats = () => {
   csvContent += transactions.map((transact) => `${transact}\r\n`).join("");
   downloadCsv(csvContent, "Stats");
 };
+export const updateSearchedItems = (val) => {
+  const currentStats = getValue("sessionStats");
+  currentStats["searchedItems"] = val;
+  setValue("sessionStats", currentStats);
+};
+
