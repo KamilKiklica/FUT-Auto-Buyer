@@ -72,7 +72,7 @@ export const buyPlayer = (
           }
 
           const shouldList = sellPrice && !isNaN(sellPrice) && isValidRating;
-
+          const profit = sellPrice * 0.95 - price;
           if (isBin) {
             let winCount = increAndGetStoreValue("winCount");
             let sym = " W:" + formatString(winCount.toString(), 4);
@@ -88,7 +88,7 @@ export const buyPlayer = (
               sellPrice < 0
                 ? "move to transferlist"
                 : shouldList
-                ? "selling for: " + sellPrice
+                ? "selling for: " + sellPrice + ", Profit: " + profit
                 : buyerSetting["idAbDontMoveWon"]
                 ? ""
                 : "move to club"
@@ -99,7 +99,7 @@ export const buyPlayer = (
                 if (sellPrice < 0) {
                   services.Item.move(player, ItemPile.TRANSFER);
                 } else if (shouldList) {
-                  updateProfit(sellPrice * 0.95 - price);
+                  updateProfit(profit);
                   services.Item.list(
                     player,
                     getSellBidPrice(sellPrice),
@@ -167,6 +167,10 @@ export const buyPlayer = (
               sendNotificationToUser(
                 `| ${playerName.trim()} | ${priceTxt.trim()} | failure |`
               );
+          }
+
+          if (buyerSetting["idBypassSoftBan"] && status == 429) {
+            setValue("softbanDetected", false);
           }
 
           if (buyerSetting["idAbStopErrorCode"]) {

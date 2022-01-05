@@ -72,10 +72,10 @@ export const statsProcessor = () => {
 const updateTimer = () => {
   const startTime = getValue("botStartTime");
   if (startTime && getValue("autoBuyerActive")) {
-    const diffInSeconds = (new Date().getTime() - startTime.getTime()) / 1000;
-    const mins = Math.floor(diffInSeconds / 60);
+    const diffInSeconds = Math.abs(new Date() - startTime) / 1000;
+    const hrs = Math.floor((diffInSeconds / 60 / 60) % 24);
+    const mins = Math.floor((diffInSeconds / 60) % 60);
     const secs = Math.floor(diffInSeconds % 60);
-    const hrs = Math.floor(mins / 60);
     const timeString =
       (hrs < 10 ? "0" : "") +
       hrs +
@@ -122,4 +122,9 @@ export const updateStats = (key, value) => {
   const currentStats = getValue("sessionStats");
   currentStats[key] = value;
   setValue("sessionStats", currentStats);
+};
+
+export const getStatsValue = (key) => {
+  const currentStats = getValue("sessionStats");
+  return currentStats[key] || 0;
 };
