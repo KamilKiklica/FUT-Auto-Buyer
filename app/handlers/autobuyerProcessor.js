@@ -1,3 +1,4 @@
+import { STATE_ACTIVE, STATE_PAUSED, STATE_STOPPED } from "../app.constants";
 import {
   idAbStatus,
   idAutoBuyerFoundLog,
@@ -25,8 +26,8 @@ import {
   playAudio,
 } from "../utils/commonUtil";
 import { addFutbinCachePrice } from "../utils/futbinUtil";
-import { writeToDebugLog, writeToLog } from "../utils/logUtil";
-import { sendPinEvents, sendUINotification } from "../utils/notificationUtil";
+import {writeToDebugLog, writeToLog} from "../utils/logUtil";
+import {sendNotificationToUser, sendPinEvents, sendUINotification} from "../utils/notificationUtil";
 import {
   getBuyBidPrice,
   getSellBidPrice,
@@ -65,17 +66,24 @@ export const startAutoBuyer = async function (isResume) {
   $("#" + idAbStatus)
     .css("color", "#2cbe2d")
     .html("RUNNING");
-
   const isActive = getValue("autoBuyerActive");
   if (isActive) return;
   sendUINotification(isResume ? "Autobuyer Resumed" : "Autobuyer Started");
   setValue("autoBuyerActive", true);
-  setValue("autoBuyerState", "Active");
+  setValue("autoBuyerState", STATE_ACTIVE);
+  const isRestart = getValue("isAutomaticallyRestart");
   if (!isResume) {
-    setValue("botStartTime", new Date());
-    setValue("purchasedCardCount", 0);
-    setValue("searchFailedCount", 0);
-    setValue("currentPage", 1);
+    if (!isRestart){
+      setValue("botStartTime", new Date());
+      setValue("botTimeATM", new Date());
+      setValue("purchasedCardCount", 0);
+      setValue("searchFailedCount", 0);
+      setValue("currentPage", 1);
+      setValue("TotalRestartSeconds", 0);
+    }else {
+      setValue("botTimeATM", new Date());
+      setValue("currentPage", 1);
+    }
   }
   let switchFilterWithContext = switchFilterIfRequired.bind(this);
   let srchTmWithContext = searchTransferMarket.bind(this);
@@ -96,7 +104,7 @@ export const startAutoBuyer = async function (isResume) {
   let operationInProgress = false;
   if (getValue("autoBuyerActive")) {
     interval = setRandomInterval(async () => {
-      passInterval = pauseBotWithContext(buyerSetting);
+      passInterval = await pauseBotWithContext(buyerSetting);
       stopBotIfRequired(buyerSetting);
       const isBuyerActive = getValue("autoBuyerActive");
       if (isBuyerActive && !operationInProgress) {
@@ -118,14 +126,39 @@ export const startAutoBuyer = async function (isResume) {
   }
 };
 
+export const autoRestartAutoBuyer = () => {
+  let buyerSetting = getBuyerSettings();
+  if (buyerSetting["idAbRestartAfter"]){
+    const autoRestart = getValue("RestartTime");
+    setTimeout(() => {
+      const isActive = getValue("autoBuyerActive");
+      if (isActive) return;
+      setValue("isAutomaticallyRestart", true);
+      startAutoBuyer.call(getValue("AutoBuyerInstance"));
+      writeToLog(
+          `Autobuyer automatically restarted.`,
+          idProgressAutobuyer
+      );
+    }, autoRestart * 1000);
+  }
+};
+
 export const stopAutoBuyer = (isPaused) => {
+
   interval && interval.clear();
   if (!isPaused && passInterval) {
     clearTimeout(passInterval);
   }
-  const isActive = getValue("autoBuyerActive");
-  if (!isActive) return;
+
+  const state = getValue("autoBuyerState");
+  if (
+      (isPaused && state === STATE_PAUSED) ||
+      (!isPaused && state === STATE_STOPPED)
+  ) {
+    return;
+  }
   setValue("autoBuyerActive", false);
+  setValue("isAutomaticallyRestart", false);
   setValue("searchInterval", {
     ...getValue("searchInterval"),
     end: Date.now(),
@@ -133,7 +166,7 @@ export const stopAutoBuyer = (isPaused) => {
   if (!isPaused) {
     playAudio("finish");
   }
-  setValue("autoBuyerState", isPaused ? "Paused" : "Stopped");
+  setValue("autoBuyerState", isPaused ? STATE_PAUSED : STATE_STOPPED);
   sendUINotification(isPaused ? "Autobuyer Paused" : "Autobuyer Stopped");
   $("#" + idAbStatus)
     .css("color", "red")
@@ -147,6 +180,25 @@ const searchTransferMarket = function (buyerSetting) {
     const useRandMinBuy = buyerSetting["idAbRandMinBuyToggle"];
     const futBinBuyPercent = buyerSetting["idBuyFutBinPercent"] || 100;
     let currentPage = getValue("currentPage") || 1;
+
+    if (buyerSetting["idAbOnlyOnePage"]){
+      currentPage = buyerSetting["idAbStartSearchPage"];
+      writeToLog("# Only searching on Page: " + currentPage, idAutoBuyerFoundLog);
+    }
+    if (buyerSetting["idAbOnlyRangePage"]){
+      const rangeVal = getRangeValue(buyerSetting["idAbRangeSearchPage"]);
+      if (rangeVal.length >= 2) {
+        currentPage = getValue("currentPage");
+        if (!(currentPage >= rangeVal[0] && currentPage <= (rangeVal[1]-1))){
+          setValue("currentPage", rangeVal[0]);
+          currentPage = getValue("currentPage");
+        }else {
+          setValue("currentPage", currentPage +1);
+          currentPage = getValue("currentPage");
+        }
+      }
+      writeToLog("# Searching in Range " + buyerSetting['idAbRangeSearchPage'] + " on Page: " + currentPage, idAutoBuyerFoundLog)
+    }
     const playersList = new Set(
       (buyerSetting["idAddIgnorePlayersList"] || []).map(({ id }) => id)
     );
@@ -216,7 +268,11 @@ const searchTransferMarket = function (buyerSetting) {
           ) {
             increAndGetStoreValue("currentPage");
           } else {
-            setValue("currentPage", 1);
+            if (!buyerSetting["idAbOnlyRangePage"]){
+              setValue("currentPage", 1);
+            }
+
+            //setValue("currentPage", getValue("currentPage") -2);
           }
           if (buyerSetting["idAbShouldSort"])
             response.data.items = sortPlayers(

@@ -47,6 +47,7 @@ export const statsProcessor = () => {
     $("#" + idAbProfit).html(currentStats.profit);
     $("#" + idAbSearchedItems).html(currentStats.searchedItems);
 
+
     updateTimer();
 
     if (currentStats.unsoldItems) {
@@ -72,7 +73,8 @@ export const statsProcessor = () => {
 const updateTimer = () => {
   const startTime = getValue("botStartTime");
   if (startTime && getValue("autoBuyerActive")) {
-    const diffInSeconds = Math.abs(new Date() - startTime) / 1000;
+    if (!getValue("TotalRestartSeconds")) setValue("TotalRestartSeconds", 0);
+    const diffInSeconds = (Math.abs(new Date() - (startTime)) / 1000) - getValue("TotalRestartSeconds");
     const hrs = Math.floor((diffInSeconds / 60 / 60) % 24);
     const mins = Math.floor((diffInSeconds / 60) % 60);
     const secs = Math.floor(diffInSeconds % 60);
